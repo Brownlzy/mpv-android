@@ -30,13 +30,25 @@ android {
         viewBinding = true
     }
 
+    if (isDebug()) {
+        packagingOptions {
+            doNotStrip "*/armeabi/*.so"
+            doNotStrip "*/armeabi-v7a/*.so"
+            doNotStrip "*/arm64-v8a/*.so"
+            doNotStrip "*/x86/*.so"
+            doNotStrip "*/x86_64/*.so"
+            doNotStrip "*/mips/*.so"
+            doNotStrip "*/mips64/*.so"
+            //...
+        }
+    }
     splits {
         abi {
             enable true
             reset()
             // include only the ABIs that were actually built
             project.ext.abiCodes.each { abi, _ ->
-                if (new File(project.projectDir, "src/main/jniLibs/${abi}").exists())
+                if (new File(project.projectDir, "src\\main\\jniLibs\\${abi}").exists())
                     include(abi)
             }
             universalApk true // build an APK with all ABIs too
@@ -61,4 +73,25 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'androidx.recyclerview:recyclerview:1.3.0'
     implementation 'androidx.media:media:1.6.0'
+}
+
+boolean isDebug() {
+    boolean ret = false
+    try {
+        Properties properties = new Properties()
+        File file = project.rootProject.file('local.properties')
+        if (!file.exists()) {
+            return false
+        }
+        properties.load(file.newDataInputStream())
+        String debugStr = properties.getProperty("debug")
+        if (debugStr != null && debugStr.length() > 0) {
+            ret = debugStr.toBoolean()
+        }
+    } catch (Throwable throwable) {
+        throwable.printStackTrace()
+        ret = false
+    }
+    project.logger.error("[${project.name}]Debug:${ret}")
+    return ret
 }
