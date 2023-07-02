@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Environment
 import android.preference.PreferenceManager
 import android.view.*
+import android.widget.Toast
 import kotlin.math.abs
 import kotlin.reflect.KProperty
 
@@ -332,7 +333,10 @@ internal class MPVView(context: Context, attrs: AttributeSet) : SurfaceView(cont
 
     // Commands
 
-    fun cyclePause() = MPVLib.command(arrayOf("cycle", "pause"))
+    fun cyclePause(){
+        MPVLib.command(arrayOf("cycle", "pause"))
+        Toast.makeText(context,MPVLib.getPropertyInt("audio-session-id").toString(),Toast.LENGTH_LONG).show()
+    }
     fun cycleAudio() = MPVLib.command(arrayOf("cycle", "audio"))
     fun cycleSub() = MPVLib.command(arrayOf("cycle", "sub"))
     fun cycleHwdec() = MPVLib.command(arrayOf("cycle-values", "hwdec", "auto", "no"))
