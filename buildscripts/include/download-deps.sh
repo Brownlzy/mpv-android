@@ -51,6 +51,6 @@ if [ ! -d lua ]; then
 fi
 
 # mpv
-[ ! -d mpv ] && git clone https://github.com/mpv-player/mpv
+[ ! -d mpv ] && git clone -b audiosessionid https://github.com/Brownlzy/mpv
 
 cd ..
