@@ -12,6 +12,7 @@
     <string name="dialog_no">否</string>
     <string name="dialog_prev">上一个</string>
     <string name="dialog_next">下一个</string>
+    <string name="dialog_reset">重置</string>
     <string name="track_audio">音频</string>
     <string name="track_subs">字幕</string>
     <string name="track_off">关</string>
@@ -57,6 +58,8 @@
     <string name="action_pick_file">选择文件</string>
     <string name="action_external_storage">外部存储</string>
     <string name="action_toggle_filter">切换过滤器</string>
+    <string name="action_open_doc_tree">打开目录树</string>
+    <string name="file_picker_old">文件选择器\n（旧版）</string>
 
     <!-- Strings related to Settings -->
     <string name="pref_header_general">常规</string>
@@ -92,9 +95,9 @@
 
     <string name="pref_gesture_horiz_title">水平拖拽</string>
 
-    <string name="pref_gesture_vert_left_title">垂直拖拽（左）</string>
+    <string name="pref_gesture_vert_left_title">垂直拖拽（左边）</string>
 
-    <string name="pref_gesture_vert_right_title">垂直拖拽（右）</string>
+    <string name="pref_gesture_vert_right_title">垂直拖拽（右边）</string>
 
     <string name="pref_gesture_tap_left_title">双击（左）</string>
 

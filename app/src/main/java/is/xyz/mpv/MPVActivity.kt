@@ -212,15 +212,15 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         }
 
         ViewCompat.setOnApplyWindowInsetsListener(binding.outside) { _, windowInsets ->
-            val insets = windowInsets.getInsets(WindowInsetsCompat.Type.mandatorySystemGestures())
+            // guidance: https://medium.com/androiddevelopers/gesture-navigation-handling-visual-overlaps-4aed565c134c
+            val insets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
             val insets2 = windowInsets.getInsets(WindowInsetsCompat.Type.displayCutout())
             binding.outside.updateLayoutParams<MarginLayoutParams> {
-                leftMargin = insets.left
-                // Android seems to always reserve space for that status bar at the top,
-                // we don't want that so ignore it. However we still need to account for the cutout.
-                topMargin = insets2.top
-                bottomMargin = insets.bottom
-                rightMargin = insets.right
+                // avoid system bars and cutout
+                leftMargin = Math.max(insets.left, insets2.left)
+                topMargin = Math.max(insets.top, insets2.top)
+                bottomMargin = Math.max(insets.bottom, insets2.bottom)
+                rightMargin = Math.max(insets.right, insets2.right)
             }
             WindowInsetsCompat.CONSUMED
         }
@@ -291,7 +291,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
             return
         }
 
-        player.initialize(applicationContext.filesDir.path)
+        player.initialize(applicationContext.filesDir.path, applicationContext.cacheDir.path)
         player.addObserver(this)
         player.playFile(filepath)
 
@@ -303,6 +303,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
 
         mediaSession = initMediaSession()
         updateMediaSession()
+        BackgroundPlaybackService.mediaToken = mediaSession?.sessionToken
 
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
@@ -336,8 +337,15 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
     override fun onDestroy() {
         Log.v(TAG, "Exiting.")
 
-        mediaSession?.isActive = false
-        mediaSession?.release()
+        // Suppress any further callbacks
+        activityIsForeground = false
+
+        BackgroundPlaybackService.mediaToken = null
+        mediaSession?.let {
+            it.isActive = false
+            it.release()
+        }
+        mediaSession = null
 
         @Suppress("DEPRECATION")
         audioManager?.abandonAudioFocus(audioFocusChangeListener)
@@ -390,7 +398,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
     override fun onPause() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             if (isInMultiWindowMode || isInPictureInPictureMode) {
-                Log.v(TAG, "Going into multi-window mode (PiP=$isInPictureInPictureMode)")
+                Log.v(TAG, "Going into multi-window mode")
                 super.onPause()
                 return
             }
@@ -720,12 +728,17 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
                 return true
             }
             KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_DPAD_CENTER -> {
-                if (ev.action == KeyEvent.ACTION_DOWN) {
-                    val childCount = group1.childCount
-                    if (btnSelected < childCount)
-                        group1.getChildAt(btnSelected)?.performClick()
+                val childCount = group1.childCount
+                val view = if (btnSelected < childCount)
+                    group1.getChildAt(btnSelected)
+                else
+                    group2.getChildAt(btnSelected - childCount)
+                if (ev.action == KeyEvent.ACTION_UP) {
+                    // 500ms appears to be the standard
+                    if (ev.eventTime - ev.downTime > 500L)
+                        view?.performLongClick()
                     else
-                        group2.getChildAt(btnSelected - childCount)?.performClick()
+                        view?.performClick()
                 }
                 return true
             }
@@ -858,7 +871,9 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
     private fun playlistPrev() = MPVLib.command(arrayOf("playlist-prev"))
     private fun playlistNext() = MPVLib.command(arrayOf("playlist-next"))
 
-    private fun showToast(msg: String) {
+    private fun showToast(msg: String, cancel: Boolean = false) {
+        if (cancel)
+            toast.cancel()
         toast.setText(msg)
         toast.show()
     }
@@ -910,7 +925,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
             return path
         }
         // Else, pass the fd to mpv
-        return "fdclose://${fd}"
+        return "fd://${fd}"
     }
 
     private fun parseIntentExtras(extras: Bundle?) {
@@ -951,13 +966,13 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
             else    -> "???"
         }
 
-        if (track_id == -1) {
-            showToast("$trackPrefix ${getString(R.string.track_off)}")
-            return
+        val msg = if (track_id == -1) {
+            "$trackPrefix ${getString(R.string.track_off)}"
+        } else {
+            val trackName = player.tracks[track_type]?.firstOrNull{ it.mpvId == track_id }?.name ?: "???"
+            "$trackPrefix $trackName"
         }
-
-        val trackName = player.tracks[track_type]?.firstOrNull{ it.mpvId == track_id }?.name ?: "???"
-        showToast("$trackPrefix $trackName")
+        showToast(msg, true)
     }
 
     private fun cycleAudio() = trackSwitchNotification {
@@ -1091,7 +1106,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
     private fun goIntoPiP() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N)
             return
-        updatePiPParams()
+        updatePiPParams(true)
         enterPictureInPictureMode()
     }
 
@@ -1441,8 +1456,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         val r = if (paused) R.drawable.ic_play_arrow_black_24dp else R.drawable.ic_pause_black_24dp
         binding.playBtn.setImageResource(r)
 
-        if (lockedUI)
-            updatePiPParams()
+        updatePiPParams()
         if (paused)
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         else
@@ -1509,11 +1523,13 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
             ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
     }
 
-    private fun updatePiPParams() {
+    private fun updatePiPParams(force: Boolean = false) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O)
             return
+        if (!isInPictureInPictureMode && !force)
+            return
         val intent1 = NotificationButtonReceiver.createIntent(this, "PLAY_PAUSE")
-        val action1 = if (player.paused ?: true) {
+        val action1 = if (psc.pause) {
             RemoteAction(Icon.createWithResource(this, R.drawable.ic_play_arrow_black_24dp),
                     "Play", "", intent1)
         } else {
@@ -1586,7 +1602,10 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         if (!activityIsForeground) return
         when (property) {
             "track-list" -> player.loadTracks()
-            "video-params" -> updateOrientation()
+            "video-params/aspect" -> {
+                updateOrientation()
+                updatePiPParams()
+            }
             "video-format" -> updateAudioUI()
             "hwdec-current" -> updateDecoderButton()
         }
